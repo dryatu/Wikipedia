@@ -1,15 +1,11 @@
 Wikipedia
 =========
 
-.. image:: https://travis-ci.org/goldsmith/Wikipedia.png?branch=master
-  :target: https://travis-ci.org/goldsmith/Wikipedia
-.. image:: https://pypip.in/d/wikipedia/badge.png
-  :target: https://crate.io/packages/wikipedia
-.. image:: https://pypip.in/v/wikipedia/badge.png
-  :target: https://crate.io/packages/wikipedia
+This is a fork of **Wikipedia** Python library that makes it easy to access 
+and parse data from Wikipedia.
 
-**Wikipedia** is a Python library that makes it easy to access and parse
-data from Wikipedia.
+Forked version attempts to fix errors from the original code to make this
+library more usable.
 
 Search Wikipedia, get article summaries, get data like links and images
 from a page, and more. Wikipedia wraps the `MediaWiki
@@ -48,7 +44,7 @@ To install Wikipedia, simply run:
 
 ::
 
-  $ pip install wikipedia
+  $ git clone git@github.com:dryatu/Wikipedia.git
 
 Wikipedia is compatible with Python 2.6+ (2.7+ to run unittest discover) and Python 3.3+.
 
@@ -60,22 +56,6 @@ Read the docs at https://wikipedia.readthedocs.org/en/latest/.
 -  `Quickstart <https://wikipedia.readthedocs.org/en/latest/quickstart.html>`__
 -  `Full API <https://wikipedia.readthedocs.org/en/latest/code.html>`__
 
-To run tests, clone the `respository on GitHub <https://github.com/goldsmith/Wikipedia>`__, then run:
-
-::
-
-  $ pip install -r requirements.txt
-  $ python -m unittest discover tests/ '*test.py'
-
-in the root project directory.
-
-To build the documentation yourself, after installing requirements.txt, run:
-
-::
-
-  $ pip install sphinx
-  $ cd docs/
-  $ make html
 
 License
 -------
