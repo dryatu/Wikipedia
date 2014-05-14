@@ -2,7 +2,6 @@ import requests
 import time
 from bs4 import BeautifulSoup
 from datetime import datetime, timedelta
-from decimal import Decimal
 
 from .exceptions import PageError, DisambiguationError, RedirectError, HTTPTimeoutError, WikipediaException
 from .util import cache, stdout_encode
@@ -12,7 +11,6 @@ API_URL = 'http://en.wikipedia.org/w/api.php'
 RATE_LIMIT = False
 RATE_LIMIT_MIN_WAIT = None
 RATE_LIMIT_LAST_CALL = None
-USER_AGENT = 'wikipedia (https://github.com/goldsmith/Wikipedia/)'
 
 
 def set_lang(prefix):
@@ -29,18 +27,6 @@ def set_lang(prefix):
 
   for cached_func in (search, suggest, summary):
     cached_func.clear_cache()
-
-
-def set_user_agent(user_agent_string):
-    '''
-    Set the User-Agent string to be used for all requests.
-
-    Arguments:
-
-    * user_agent_string - (string) a string specifying the User-Agent header
-    '''
-    global USER_AGENT
-    USER_AGENT = user_agent_string
 
 
 def set_rate_limiting(rate_limit, min_wait=timedelta(milliseconds=50)):
@@ -99,7 +85,7 @@ def search(query, results=10, suggestion=False):
   raw_results = _wiki_request(**search_params)
 
   if 'error' in raw_results:
-    if raw_results['error']['info'] in ('HTTP request timed out.', 'Pool queue is full'):
+    if raw_results['error']['info'] == 'HTTP request timed out.':
       raise HTTPTimeoutError(query)
     else:
       raise WikipediaException(raw_results['error']['info'])
@@ -111,50 +97,6 @@ def search(query, results=10, suggestion=False):
       return list(search_results), raw_results['query']['searchinfo']['suggestion']
     else:
       return list(search_results), None
-
-  return list(search_results)
-
-
-@cache
-def geosearch(latitude, longitude, title=None, results=10, radius=1000):
-  '''
-  Do a wikipedia geo search for `latitude` and `longitude`
-  using HTTP API described in http://www.mediawiki.org/wiki/Extension:GeoData
-
-  Arguments:
-
-  * latitude (float or decimal.Decimal)
-  * longitude (float or decimal.Decimal)
-
-  Keyword arguments:
-
-  * title - The title of an article to search for
-  * results - the maximum number of results returned
-  * radius - Search radius in meters. The value must be between 10 and 10000
-  '''
-
-  search_params = {
-    'list': 'geosearch',
-    'gsradius': radius,
-    'gscoord': '{0}|{1}'.format(latitude, longitude),
-    'gslimit': results
-  }
-  if title:
-    search_params['titles'] = title
-
-  raw_results = _wiki_request(**search_params)
-
-  if 'error' in raw_results:
-    if raw_results['error']['info'] in ('HTTP request timed out.', 'Pool queue is full'):
-      raise HTTPTimeoutError('{0}|{1}'.format(latitude, longitude))
-    else:
-      raise WikipediaException(raw_results['error']['info'])
-
-  search_pages = raw_results['query'].get('pages', None)
-  if search_pages:
-    search_results = (v['title'] for k, v in search_pages.items() if k != '-1')
-  else:
-    search_results = (d['title'] for d in raw_results['query']['geosearch'])
 
   return list(search_results)
 
@@ -216,8 +158,8 @@ def summary(title, sentences=0, chars=0, auto_suggest=True, redirect=True):
 
   Keyword arguments:
 
-  * sentences - if set, return the first `sentences` sentences (can be no greater than 10).
-  * chars - if set, return only the first `chars` characters (actual text returned may be slightly longer).
+  * sentences - if set, return the first `sentences` sentences
+  * chars - if set, return only the first `chars` characters.
   * auto_suggest - let Wikipedia find a valid page title for the query
   * redirect - allow redirection without raising RedirectError
   '''
@@ -247,34 +189,26 @@ def summary(title, sentences=0, chars=0, auto_suggest=True, redirect=True):
   return summary
 
 
-def page(title=None, pageid=None, auto_suggest=True, redirect=True, preload=False):
+def page(title, auto_suggest=True, redirect=True, preload=False):
   '''
-  Get a WikipediaPage object for the page with title `title` or the pageid
-  `pageid` (mutually exclusive).
+  Get a WikipediaPage object for the page with title `title`.
 
   Keyword arguments:
 
-  * title - the title of the page to load
-  * pageid - the numeric pageid of the page to load
   * auto_suggest - let Wikipedia find a valid page title for the query
   * redirect - allow redirection without raising RedirectError
   * preload - load content, summary, images, references, and links during initialization
   '''
 
-  if title is not None:
-    if auto_suggest:
-      results, suggestion = search(title, results=1, suggestion=True)
-      try:
-        title = suggestion or results[0]
-      except IndexError:
-        # if there is no suggestion or search results, the page doesn't exist
-        raise PageError(title)
-    return WikipediaPage(title, redirect=redirect, preload=preload)
-  elif pageid is not None:
-    return WikipediaPage(pageid=pageid, preload=preload)
-  else:
-    raise ValueError("Either a title or a pageid must be specified")
+  if auto_suggest:
+    results, suggestion = search(title, results=1, suggestion=True)
+    try:
+      title = suggestion or results[0]
+    except IndexError:
+      # if there is no suggestion or search results, the page doesn't exist
+      raise PageError(title)
 
+  return WikipediaPage(title, redirect=redirect, preload=preload)
 
 
 class WikipediaPage(object):
@@ -283,14 +217,9 @@ class WikipediaPage(object):
   Uses property methods to filter data from the raw HTML.
   '''
 
-  def __init__(self, title=None, pageid=None, redirect=True, preload=False, original_title=''):
-    if title is not None:
-      self.title = title
-      self.original_title = original_title or title
-    elif pageid is not None:
-      self.pageid = pageid
-    else:
-      raise ValueError("Either a title or a pageid must be specified")
+  def __init__(self, title, redirect=True, preload=False, original_title=''):
+    self.title = title
+    self.original_title = original_title or title
 
     self.load(redirect=redirect, preload=preload)
 
@@ -301,16 +230,6 @@ class WikipediaPage(object):
   def __repr__(self):
     return stdout_encode(u'<WikipediaPage \'{}\'>'.format(self.title))
 
-  def __eq__(self, other):
-    try:
-      return (
-        self.pageid == other.pageid
-        and self.title == other.title
-        and self.url == other.url
-      )
-    except:
-      return False
-
   def load(self, redirect=True, preload=False):
     '''
     Load basic information from Wikipedia.
@@ -318,78 +237,58 @@ class WikipediaPage(object):
 
     Does not need to be called manually, should be called automatically during __init__.
     '''
+
     query_params = {
       'prop': 'info|pageprops',
       'inprop': 'url',
       'ppprop': 'disambiguation',
+      'titles': self.title
     }
-    if not getattr(self, 'pageid', None):
-      query_params['titles'] = self.title
-    else:
-      query_params['pageids'] = self.pageid
 
     request = _wiki_request(**query_params)
-
     pages = request['query']['pages']
     pageid = list(pages.keys())[0]
     data = pages[pageid]
 
     # missing is equal to empty string if it is True
     if data.get('missing') == '':
-      if hasattr(self, 'title'):
-        raise PageError(self.title)
-      else:
-        raise PageError(pageid=self.pageid)
+      raise PageError(self.title)
 
     # same thing for redirect
     elif data.get('redirect') == '':
       if redirect:
         # change the title and reload the whole object
         query_params = {
-          'prop': 'extracts',
-          'explaintext': '',
+          'prop': 'info',
+          'redirects': '',
           'titles': self.title
         }
-
         request = _wiki_request(**query_params)
+        redirected_title = request["query"]["redirects"][0]["to"]
 
-        extract = request['query']['pages'][pageid]['extract']
-
-        # extract should be of the form "REDIRECT <new title>"
-        # ("REDIRECT" could be translated to current language)
-        title = ' '.join(extract.split('\n')[0].split()[1:]).strip()
-
-        self.__init__(title, redirect=redirect, preload=preload)
+        self.__init__(redirected_title, redirect=False, preload=preload)
 
       else:
-        raise RedirectError(getattr(self, 'title', data['title']))
+        raise RedirectError(self.title)
 
     # since we only asked for disambiguation in ppprop,
     # if a pageprop is returned,
     # then the page must be a disambiguation page
     elif data.get('pageprops'):
-      query_params = {
-        'prop': 'revisions',
-        'rvprop': 'content',
-        'rvparse': '',
-        'rvlimit': 1
-      }
-      if hasattr(self, 'pageid'):
-        query_params['pageids'] = self.pageid
-      else:
-        query_params['titles'] = self.title
-      request = _wiki_request(**query_params)
+      request = _wiki_request(titles=self.title, prop='revisions', rvprop='content', rvparse='', rvlimit=1)
       html = request['query']['pages'][pageid]['revisions'][0]['*']
 
       lis = BeautifulSoup(html).find_all('li')
       filtered_lis = [li for li in lis if not 'tocsection' in ''.join(li.get('class', []))]
       may_refer_to = [li.a.get_text() for li in filtered_lis if li.a]
 
-      raise DisambiguationError(getattr(self, 'title', data['title']), may_refer_to)
+      raise DisambiguationError(self.title, may_refer_to)
+
+    elif data.get('invalid') == '':
+        raise PageError(self.title)
 
     else:
       self.pageid = pageid
-      self.title = data['title']
       self.url = data['fullurl']
 
   def html(self):
@@ -421,51 +320,15 @@ class WikipediaPage(object):
 
     if not getattr(self, '_content', False):
       query_params = {
-        'prop': 'extracts|revisions',
+        'prop': 'extracts',
         'explaintext': '',
-        'rvprop': 'ids'
+        'titles': self.title
       }
-      if not getattr(self, 'title', None) is None:
-         query_params['titles'] = self.title
-      else:
-         query_params['pageids'] = self.pageid
+
       request = _wiki_request(**query_params)
-      self._content     = request['query']['pages'][self.pageid]['extract']
-      self._revision_id = request['query']['pages'][self.pageid]['revisions'][0]['revid']
-      self._parent_id   = request['query']['pages'][self.pageid]['revisions'][0]['parentid']
+      self._content = request['query']['pages'][self.pageid]['extract']
 
     return self._content
-
-  @property
-  def revision_id(self):
-    '''
-    Revision ID of the page.
-
-    The revision ID is a number that uniquely identifies the current
-    version of the page. It can be used to create the permalink or for
-    other direct API calls. See `Help:Page history
-    <http://en.wikipedia.org/wiki/Wikipedia:Revision>`_ for more
-    information.
-    '''
-
-    if not getattr(self, '_revid', False):
-      # fetch the content (side effect is loading the revid)
-      self.content
-
-    return self._revision_id
-
-  @property
-  def parent_id(self):
-    '''
-    Revision ID of the parent version of the current revision of this
-    page. See ``revision_id`` for more information.
-    '''
-
-    if not getattr(self, '_parentid', False):
-      # fetch the content (side effect is loading the revid)
-      self.content
-
-    return self._parent_id
 
   @property
   def summary(self):
@@ -478,11 +341,8 @@ class WikipediaPage(object):
         'prop': 'extracts',
         'explaintext': '',
         'exintro': '',
+        'titles': self.title
       }
-      if not getattr(self, 'title', None) is None:
-         query_params['titles'] = self.title
-      else:
-         query_params['pageids'] = self.pageid
 
       request = _wiki_request(**query_params)
       self._summary = request['query']['pages'][self.pageid]['extract']
@@ -501,11 +361,8 @@ class WikipediaPage(object):
         'gimlimit': 'max',
         'prop': 'imageinfo',
         'iiprop': 'url',
+        'titles': self.title,
       }
-      if not getattr(self, 'title', None) is None:
-         query_params['titles'] = self.title
-      else:
-         query_params['pageids'] = self.pageid
 
       request = _wiki_request(**query_params)
 
@@ -514,26 +371,6 @@ class WikipediaPage(object):
       self._images = [image['imageinfo'][0]['url'] for image in images if image.get('imageinfo')]
 
     return self._images
-
-  @property
-  def coordinates(self):
-    '''
-    Tuple of Decimals in the form of (lat, lon)
-    '''
-    if not getattr(self, '_coordinates', False):
-      query_params = {
-        'prop': 'coordinates',
-        'ellimit': 'max',
-        'titles': self.title,
-      }
-
-      request = _wiki_request(**query_params)
-
-      coordinates = request['query']['pages'][self.pageid]['coordinates']
-
-      self._coordinates = (Decimal(coordinates[0]['lat']), Decimal(coordinates[0]['lon']))
-
-    return self._coordinates
 
   @property
   def references(self):
@@ -546,11 +383,8 @@ class WikipediaPage(object):
       query_params = {
         'prop': 'extlinks',
         'ellimit': 'max',
+        'titles': self.title,
       }
-      if not getattr(self, 'title', None) is None:
-         query_params['titles'] = self.title
-      else:
-         query_params['pageids'] = self.pageid
 
       request = _wiki_request(**query_params)
 
@@ -579,11 +413,8 @@ class WikipediaPage(object):
         'prop': 'links',
         'plnamespace': 0,
         'pllimit': 'max',
+        'titles': self.title,
       }
-      if not getattr(self, 'title', None) is None:
-         request['titles'] = self.title
-      else:
-         request['pageids'] = self.pageid
       lastContinue = {}
 
       # based on https://www.mediawiki.org/wiki/API:Query#Continuing_queries
@@ -611,11 +442,8 @@ class WikipediaPage(object):
       query_params = {
         'action': 'parse',
         'prop': 'sections',
+        'page': self.title
       }
-      if not getattr(self, 'title', None) is None:
-         query_params['page'] = self.title
-      else:
-         query_params['pageid'] = self.pageid
 
       request = _wiki_request(**query_params)
       self._sections = [section['line'] for section in request['parse']['sections']]
@@ -634,7 +462,7 @@ class WikipediaPage(object):
            `section_title` and the next subheading, which is often empty.
     '''
 
-    section = u"== {} ==".format(section_title)
+    section = "== {} ==".format(section_title)
     try:
       index = self.content.index(section) + len(section)
     except ValueError:
@@ -663,14 +491,14 @@ def _wiki_request(**params):
   Returns a parsed dict of the JSON response.
   '''
   global RATE_LIMIT_LAST_CALL
-  global USER_AGENT
 
   params['format'] = 'json'
   if not 'action' in params:
     params['action'] = 'query'
 
   headers = {
-    'User-Agent': USER_AGENT
+    'User-Agent': 'wikipedia (https://github.com/goldsmith/Wikipedia/)',
+    'content-type': 'application/json; charset=utf8'
   }
 
   if RATE_LIMIT and RATE_LIMIT_LAST_CALL and \
@@ -679,7 +507,7 @@ def _wiki_request(**params):
     # it hasn't been long enough since the last API call
     # so wait until we're in the clear to make the request
 
-    wait_time = (RATE_LIMIT_LAST_CALL + RATE_LIMIT_MIN_WAIT) - datetime.now()
+    wait_time = datetime.now() - (RATE_LIMIT_LAST_CALL + RATE_LIMIT_MIN_WAIT)
     time.sleep(int(wait_time.total_seconds()))
 
   r = requests.get(API_URL, params=params, headers=headers)
