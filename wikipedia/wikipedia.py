@@ -5,13 +5,17 @@ from datetime import datetime, timedelta
 
 from .exceptions import PageError, DisambiguationError, RedirectError, HTTPTimeoutError, WikipediaException
 from .util import cache, stdout_encode
-
+import string
 
 API_URL = 'http://en.wikipedia.org/w/api.php'
 RATE_LIMIT = False
 RATE_LIMIT_MIN_WAIT = None
 RATE_LIMIT_LAST_CALL = None
 
+
+def init_api(url):
+    global API_URL
+    API_URL = url    
 
 def set_lang(prefix):
   '''
@@ -23,7 +27,10 @@ def set_lang(prefix):
   .. note:: Make sure you search for page titles in the language that you have set.
   '''
   global API_URL
-  API_URL = 'http://' + prefix.lower() + '.wikipedia.org/w/api.php'
+  parts = API_URL.split(".")[1:]
+  parts.insert(0, "http://"+prefix.lower())
+  API_URL = string.join(parts, ".")
+        
 
   for cached_func in (search, suggest, summary):
     cached_func.clear_cache()
